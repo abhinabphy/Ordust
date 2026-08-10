@@ -63,7 +63,7 @@ pub enum TimeInForce {
 /// price: Wrapped in an Option. It is Some(Price) for Limit orders, but None for Market orders because they aggressively execute at whatever price is currently available.
 ///
 /// timestamp: Critical for fairness. If two orders sit at the exact same price level, the matching engine uses this timestamp to execute the older order first (FIFO priority).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,PartialEq)]
 pub struct Order {
     pub id: OrderId,
     pub side: Side,

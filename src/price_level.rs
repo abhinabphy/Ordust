@@ -3,9 +3,9 @@ use std::collections::VecDeque;
 
 #[derive(Debug, Clone)]
 pub struct Level {
-    pub price: Price,
-    pub orders: VecDeque<Order>,
-    pub total_qty: Qty, // running sum
+     price: Price,
+     orders: VecDeque<Order>,
+     total_qty: Qty, // running sum
 }
 
 impl Level {
@@ -17,7 +17,9 @@ impl Level {
         }
     }
     pub fn push_back(self: &mut Self, order: Order) {
+        self.total_qty.0+=order.remaining_qty.0;
         self.orders.push_back(order);
+      
     }
     pub fn front(&self) -> Option<&Order> {
         self.orders.front()
@@ -28,8 +30,11 @@ impl Level {
     }
     /// Pop the front order once fully filled.
     pub fn pop_front(&mut self) -> Option<Order> {
-        self.orders.pop_front()
+        let o=self.orders.pop_front();
+        self.total_qty.0-=o.as_ref().unwrap().remaining_qty.0;
+        o
     }
+
 
     /// O(n) scan-and-remove by id — this is the thing phase 2 will optimize.
     pub fn remove(&mut self, id: OrderId) -> Option<Order> {
@@ -47,5 +52,10 @@ impl Level {
     }
     pub fn is_empty(&self) -> bool {
         self.orders.is_empty()
+    }
+
+    pub fn get_order_by_ID(&self,id: OrderId)->Option<&Order>{
+        let order=self.orders.iter().find(|&x| x.id==id);
+            order
     }
 }
