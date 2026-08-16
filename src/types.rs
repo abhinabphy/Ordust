@@ -1,5 +1,5 @@
-use std::ops::Sub;
 use std::ops::AddAssign;
+use std::ops::Sub;
 use thiserror::Error;
 
 //Custom Types
@@ -17,9 +17,9 @@ impl Sub for Price {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Qty(pub u64); // base-asset units, smallest denomination
 
-impl AddAssign for Qty{
+impl AddAssign for Qty {
     fn add_assign(&mut self, rhs: Self) {
-        self.0=self.0+rhs.0;
+        self.0 = self.0 + rhs.0;
     }
 }
 
@@ -63,7 +63,7 @@ pub enum TimeInForce {
 /// price: Wrapped in an Option. It is Some(Price) for Limit orders, but None for Market orders because they aggressively execute at whatever price is currently available.
 ///
 /// timestamp: Critical for fairness. If two orders sit at the exact same price level, the matching engine uses this timestamp to execute the older order first (FIFO priority).
-#[derive(Debug, Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Order {
     pub id: OrderId,
     pub side: Side,
@@ -84,6 +84,14 @@ pub struct Trade {
     pub price: Price,            // always the MAKER's price — standard convention
     pub qty: Qty,
     pub timestamp: Timestamp,
+}
+
+#[derive(Debug, Clone)]
+pub struct FillResult {
+    pub maker_order_id: OrderId,
+    pub price: Price,
+    pub filled_qty: Qty,
+    pub maker_fully_filled: bool,
 }
 
 ///
@@ -119,4 +127,8 @@ pub enum EngineError {
     FokNotFillable,
     #[error("duplicate order id: {0:?}")]
     DuplicateOrderId(OrderId),
+    #[error("order crosses with side : {0:?}, and with price :{1:?}")]
+    Crosses(Side, Price),
+    #[error("invalid tif combination")]
+    InvalidTifForMarket,
 }
