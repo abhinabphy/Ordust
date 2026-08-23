@@ -5,3 +5,10 @@ edition = "2024"
 
 [dependencies]
 thiserror = "2.0.20"
+
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
+
+[[bench]]
+name = "orderbook_benchmarks"
+harness = false

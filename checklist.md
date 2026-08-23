@@ -2,7 +2,7 @@
  
 - [x] Limit order resting, no cross → appears in `depth()`
 - [ ] Limit order that fully crosses → `Trade` emitted, nothing rests
-- [ ] Limit order that partially crosses → `Trade` + remainder rests at its own price
+- [x] Limit order that partially crosses → `Trade` + remainder rests at its own price
 - [ ] Market order with insufficient opposite liquidity → fills what's available, remainder **discarded** (market orders never rest)
 - [ ] IOC: partial fill executes, remainder discarded, nothing left in book
 - [ ] FOK: insufficient liquidity → **zero** state change, `Err` returned

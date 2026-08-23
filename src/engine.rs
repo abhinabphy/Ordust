@@ -1,8 +1,8 @@
-use crate::types::Trade;
+use crate::types::{Trade,Qty,OrderId};
 use crate::{
     BookEvent, EngineError, Order, OrderBook,
     OrderType::{self, Limit},
-    Side::{self, Buy},
+    Side::{self, Buy,Sell},
 };
 use crate::{Price, TimeInForce};
 pub struct Engine {
@@ -10,7 +10,7 @@ pub struct Engine {
 }
 impl Engine {
     // public functions
-    pub fn new(_book: OrderBook) -> Self {
+    pub fn new() -> Self {
         return Engine {
             book: OrderBook::new(),
         };
@@ -34,6 +34,15 @@ impl Engine {
 
         Ok(events)
     }
+    ///cancels order , returns bookevent else returns EngineError
+     pub fn cancel_order(&mut self,id:OrderId) -> Result<Vec<BookEvent>, EngineError>{
+       match self.book.remove_order(id) {
+        Some(_order) => Ok(vec![BookEvent::Cancelled { order_id: id }]),
+        None => Err(EngineError::OrderNotFound(id)),
+    }
+     }
+
+
 
     //Private functions
     fn validate(&self, order: &Order) -> Result<(), EngineError> {
@@ -53,13 +62,13 @@ impl Engine {
             }
         }
 
-        //for now non unwraps to 0 (needs improvement)
-        if self.crosses(order) {
-            return Err(EngineError::Crosses(
-                order.side,
-                order.price.unwrap_or(Price(0)),
-            ));
-        }
+        // //for now non unwraps to 0 (needs improvement)
+        // if self.crosses(order) {
+        //     return Err(EngineError::Crosses(
+        //         order.side,
+        //         order.price.unwrap_or(Price(0)),
+        //     ));
+        // }
         if let Some(_ord) = self.book.get_order(order.id) {
             return Err(EngineError::DuplicateOrderId(_ord.id));
         }
@@ -176,3 +185,56 @@ impl Engine {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{OrderType::Market, TimeInForce::GTC, book::tests::make_order};
+    #[test]
+    fn can_use_make_order_from_book_tests() {
+        let order = make_order(1, Buy, 100, 10, 1,Limit,GTC);
+
+        assert_eq!(order.id, OrderId(1));
+        assert_eq!(order.side, Buy);
+        assert_eq!(order.price, Some(Price(100)));
+        assert_eq!(order.qty, Qty(10));
+    }
+  /// Limit order resting, no cross → appears in `depth()`
+    #[test]
+    fn test_limit_resting_order_no_cross() -> Result<(), EngineError> {
+        let mut idcount=0;
+        let mut engine=Engine::new();
+        let order = make_order(idcount, Buy, 100, 10, 1,Limit,GTC);
+        let mut results=engine.submit_order(order)?;
+        // dbg!(results);
+        assert_eq!(engine.book.best_bid(),Some(Price(100)));
+        idcount+=1;
+        let order=make_order(idcount,Side::Sell,100,8,2,Limit,GTC);
+         results.extend(engine.submit_order(order)?);
+
+        dbg!(results);
+        dbg!(engine.book);
+        Ok(())
+    }
+    #[test]
+    fn test_market_order_insufficient_liquidity() -> Result<(),EngineError> {
+         let mut idcount=0;
+        let mut engine=Engine::new();
+        let order = make_order(idcount, Buy, 100, 10, 1,Limit,GTC);
+        let mut results=engine.submit_order(order)?;
+        // dbg!(results);
+        assert_eq!(engine.book.best_bid(),Some(Price(100)));
+        idcount+=1;
+        let order=make_order(idcount,Side::Sell,100,12,2,Market,TimeInForce::IOC);
+         results.extend(engine.submit_order(order)?);
+
+        dbg!(results);
+
+        dbg!(engine.book);
+
+        Ok(())
+
+    }
+}
+
+
