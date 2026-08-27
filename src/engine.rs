@@ -1,10 +1,12 @@
-use crate::types::{Trade,Qty,OrderId};
+use crate::types::{OrderId, Qty, Trade};
 use crate::{
     BookEvent, EngineError, Order, OrderBook,
     OrderType::{self, Limit},
-    Side::{self, Buy,Sell},
+    Side::{self, Buy, Sell},
 };
 use crate::{Price, TimeInForce};
+use std::sync::atomic::{AtomicU64, Ordering};
+pub static CANCEL_CALLS: AtomicU64 = AtomicU64::new(0);
 pub struct Engine {
     book: OrderBook,
 }
@@ -15,8 +17,10 @@ impl Engine {
             book: OrderBook::new(),
         };
     }
+
     /// Single entry point for all order submission.
     /// Validates → matches against opposite side → applies TIF policy to any remainder.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub fn submit_order(&mut self, mut order: Order) -> Result<Vec<BookEvent>, EngineError> {
         self.validate(&order)?;
         let mut events = vec![];
@@ -35,14 +39,17 @@ impl Engine {
         Ok(events)
     }
     ///cancels order , returns bookevent else returns EngineError
-     pub fn cancel_order(&mut self,id:OrderId) -> Result<Vec<BookEvent>, EngineError>{
-       match self.book.remove_order(id) {
-        Some(_order) => Ok(vec![BookEvent::Cancelled { order_id: id }]),
-        None => Err(EngineError::OrderNotFound(id)),
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
+    pub fn cancel_order(&mut self, id: OrderId) -> Result<Vec<BookEvent>, EngineError> {
+        match self.book.remove_order(id) {
+            Some(_order) => {
+                //println!("cancelled");
+                CANCEL_CALLS.fetch_add(1, Ordering::Relaxed);
+                Ok(vec![BookEvent::Cancelled { order_id: id }])
+            }
+            None => Err(EngineError::OrderNotFound(id)),
+        }
     }
-     }
-
-
 
     //Private functions
     fn validate(&self, order: &Order) -> Result<(), EngineError> {
@@ -189,52 +196,115 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OrderType::Market, TimeInForce::GTC, book::tests::make_order};
+    use crate::{
+        OrderType::Market,
+        TimeInForce::{GTC, IOC},
+        book::tests::make_order,
+    };
     #[test]
     fn can_use_make_order_from_book_tests() {
-        let order = make_order(1, Buy, 100, 10, 1,Limit,GTC);
+        let order = make_order(1, Buy, 100, 10, 1, Limit, GTC);
 
         assert_eq!(order.id, OrderId(1));
         assert_eq!(order.side, Buy);
         assert_eq!(order.price, Some(Price(100)));
         assert_eq!(order.qty, Qty(10));
     }
-  /// Limit order resting, no cross → appears in `depth()`
+    /// Limit order resting, no cross → appears in `depth()`
     #[test]
     fn test_limit_resting_order_no_cross() -> Result<(), EngineError> {
-        let mut idcount=0;
-        let mut engine=Engine::new();
-        let order = make_order(idcount, Buy, 100, 10, 1,Limit,GTC);
-        let mut results=engine.submit_order(order)?;
+        let mut idcount = 0;
+        let mut engine = Engine::new();
+        let order = make_order(idcount, Buy, 100, 14, 1, Limit, GTC);
+        let mut results = engine.submit_order(order)?;
         // dbg!(results);
-        assert_eq!(engine.book.best_bid(),Some(Price(100)));
-        idcount+=1;
-        let order=make_order(idcount,Side::Sell,100,8,2,Limit,GTC);
-         results.extend(engine.submit_order(order)?);
+        assert_eq!(engine.book.best_bid(), Some(Price(100)));
+        idcount += 1;
+        let order = make_order(idcount, Side::Sell, 100, 12, 2, Limit, GTC);
+        results.extend(engine.submit_order(order)?);
 
         dbg!(results);
         dbg!(engine.book);
         Ok(())
     }
     #[test]
-    fn test_market_order_insufficient_liquidity() -> Result<(),EngineError> {
-         let mut idcount=0;
-        let mut engine=Engine::new();
-        let order = make_order(idcount, Buy, 100, 10, 1,Limit,GTC);
-        let mut results=engine.submit_order(order)?;
+    fn test_market_order_insufficient_liquidity() -> Result<(), EngineError> {
+        let mut idcount = 0;
+        let mut engine = Engine::new();
+        let order = make_order(idcount, Buy, 100, 10, 1, Limit, GTC);
+        let mut results = engine.submit_order(order)?;
         // dbg!(results);
-        assert_eq!(engine.book.best_bid(),Some(Price(100)));
-        idcount+=1;
-        let order=make_order(idcount,Side::Sell,100,12,2,Market,TimeInForce::IOC);
-         results.extend(engine.submit_order(order)?);
-
+        assert_eq!(engine.book.best_bid(), Some(Price(100)));
+        idcount += 1;
+        let order = make_order(idcount, Side::Sell, 100, 14, 2, Market, TimeInForce::IOC);
+        results.extend(engine.submit_order(order)?);
         dbg!(results);
 
         dbg!(engine.book);
 
         Ok(())
+    }
 
+    #[test]
+    #[should_panic(expected = "FokNotFillable")]
+    fn test_fok_insucfficient_liquidity() {
+        let mut idcount = 0;
+        let mut engine = Engine::new();
+        let order = make_order(idcount, Buy, 100, 10, 1, Limit, GTC);
+        let mut results = engine.submit_order(order).unwrap();
+        // dbg!(results);
+        assert_eq!(engine.book.best_bid(), Some(Price(100)));
+        idcount += 1;
+        let order = make_order(idcount, Side::Sell, 100, 12, 2, Market, TimeInForce::FOK);
+        results.extend(engine.submit_order(order).unwrap());
+        dbg!(results);
+
+        dbg!(engine.book);
+    }
+    #[test]
+    fn test_check() {
+        let mut engine = Engine::new();
+
+        for id in 0..100_000 {
+            let _ = engine.submit_order(make_order(id, Buy, 100, 10, 1, Limit, GTC));
+        }
+        dbg!(engine.book.depth(Buy, 2));
+
+        // for id in 100_000..200_000 {
+        //     let order=make_order(id, Sell, 100, 10, 1, Limit, GTC);
+        //     let _ = engine.submit_order(order);
+        // }
+
+        for id in 0..100_000{
+            let _=engine.cancel_order(OrderId(id));
+        }
+        dbg!(engine.book.depth(Buy, 2));
+
+
+
+        println!(
+            "cancel_order invoked {} times",
+            CANCEL_CALLS.load(Ordering::Relaxed)
+        );
+    }
+
+    #[test]
+fn test_duplicate_order_id_returns_error() {
+    let mut engine = Engine::new();
+    
+
+    let order1 = make_order(99, Side::Buy, 100, 10, 1, OrderType::Limit, TimeInForce::GTC);
+    let result1 = engine.submit_order(order1);
+    assert!(result1.is_ok(), "First order should be accepted");
+
+
+    let order2 = make_order(99, Side::Sell, 105, 50, 2, OrderType::Limit, TimeInForce::GTC);
+    let result2 = engine.submit_order(order2);
+    match result2 {
+        Err(EngineError::DuplicateOrderId(id)) => {
+            assert_eq!(id, OrderId(99)); // Proves the error propagated correctly!
+        }
+        _ => panic!("Expected DuplicateOrderId error, got {:?}", result2),
     }
 }
-
-
+}

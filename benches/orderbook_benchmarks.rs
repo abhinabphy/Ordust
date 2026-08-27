@@ -1,8 +1,6 @@
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
+use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 // Replace `your_crate_name` with the package name defined in Cargo.toml
-use Ordust::{
-    engine, Order, OrderId, OrderType, Price, Qty, Side, TimeInForce,
-};
+use Ordust::{Order, OrderId, OrderType, Price, Qty, Side, TimeInForce, engine};
 
 fn make_test_order(id: u64, side: Side, price: u64, qty: u64) -> Order {
     Order {
@@ -13,7 +11,7 @@ fn make_test_order(id: u64, side: Side, price: u64, qty: u64) -> Order {
         price: Some(Price(price)),
         qty: Qty(qty),
         remaining_qty: Qty(qty),
-        timestamp: Ordust::Timestamp((1)),
+        timestamp: Ordust::Timestamp(1),
     }
 }
 
@@ -21,7 +19,7 @@ fn make_test_order(id: u64, side: Side, price: u64, qty: u64) -> Order {
 fn bench_resting_insertions(c: &mut Criterion) {
     let mut group = c.benchmark_group("Order Insertion");
     let num_orders = 10_000u64;
-    
+
     group.throughput(Throughput::Elements(num_orders));
 
     group.bench_function("insert_10k_resting_bids", |b| {
@@ -59,7 +57,7 @@ fn bench_cross_matching_latency(c: &mut Criterion) {
                 // Pre-populate the book with a resting Buy order
                 let maker = make_test_order(0, Side::Buy, 100, 10);
                 let _ = engine.submit_order(maker);
-                
+
                 // Construct incoming aggressive Sell order
                 let taker = make_test_order(1, Side::Sell, 100, 10);
                 (engine, taker)
