@@ -1,0 +1,25 @@
+[package]
+name = "ordust-market-data"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+slab = { workspace = true }
+thiserror = { workspace = true }
+hotpath = { workspace = true, optional = true }
+ordust-core={workspace = true}
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[features]
+default = []
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
+hotpath-alloc = ["hotpath/hotpath-alloc"]
+
+# [[bench]]
+# name = "orderbook_benchmarks"
+# path="../../benches/orderbook_benchmarks.rs"
+# harness = false
