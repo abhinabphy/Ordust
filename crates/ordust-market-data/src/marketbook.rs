@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 //     pub fn depth(&self, side: Side, n: usize) -> Vec<(Price, Qty)>;
 //     pub fn last_update_id(&self) -> u64;
 // }
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct MarketBook {
     bids: BTreeMap<Reverse<Price>, Qty>,
     asks: BTreeMap<Price, Qty>, // qty == 0 means "remove this price level"

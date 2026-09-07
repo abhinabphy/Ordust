@@ -1,20 +1,20 @@
 use std::{cmp::Reverse, collections::BTreeMap};
 
 use ordust_core::types::*;
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct DepthUpdate {
     pub first_update_id: u64,
     pub final_update_id: u64,
     pub bids: Vec<(Price, Qty)>,
     pub asks: Vec<(Price, Qty)>,
 }
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Snapshot {
     pub last_update_id: u64,
     pub bids: Vec<(Price, Qty)>,
     pub asks: Vec<(Price, Qty)>,
 }
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct TradeTick {
     pub price: Price,
     pub qty: Qty,

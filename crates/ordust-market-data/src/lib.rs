@@ -1,7 +1,7 @@
 pub mod marketbook;
-pub mod types;
 pub mod reconciler;
+pub mod types;
 
 pub use marketbook::*;
-pub use types::*;
 pub use reconciler::*;
+pub use types::*;
