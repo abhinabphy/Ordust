@@ -1,10 +1,4 @@
-**GitHub About / Tagline** (For repository settings)
 
-> An ultra-low latency, deterministic order matching engine written in safe Rust. Features $O(1)$ `Slab`-allocated price level unlinking, Price-Time priority matching, sub-100ns cancellations, and `hotpath` micro-profiling.
-
----
-
-# README Header & Overview
 
 # Ordust 🦀⚡
 
