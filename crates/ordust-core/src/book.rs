@@ -8,7 +8,6 @@ use crate::{
 use slab::Slab;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap};
-use std::f64::consts::E;
 use std::ops::Sub;
 #[derive(Debug, Clone)]
 pub struct OrderBook {
@@ -54,7 +53,6 @@ impl OrderBook {
     /// Insert a resting order. Caller (engine) guarantees it doesn't cross.
     pub fn insert_resting(&mut self, order: Order) {
         let p = order.price.expect("expected a price for order");
-        let side = order.side;
         let id = order.id;
         let nodeid: NodeId;
 

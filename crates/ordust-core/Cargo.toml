@@ -1,5 +1,5 @@
 [package]
-name = "ordust-market-data"
+name = "ordust-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -9,14 +9,6 @@ license.workspace = true
 slab = { workspace = true }
 thiserror = { workspace = true }
 hotpath = { workspace = true, optional = true }
-ordust-core={workspace = true}
-serde_json={workspace = true}
-serde={workspace=true}
-url={workspace = true}
-tokio-tungstenite={workspace = true}
-futures-util={workspace=true}
-tokio={workspace=true}
-rustls={workspace =true}
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -26,7 +18,7 @@ default = []
 hotpath = ["dep:hotpath", "hotpath/hotpath"]
 hotpath-alloc = ["hotpath/hotpath-alloc"]
 
-# [[bench]]
-# name = "orderbook_benchmarks"
-# path="../../benches/orderbook_benchmarks.rs"
-# harness = false
+[[bench]]
+name = "orderbook_benchmarks"
+path="../../benches/orderbook_benchmarks.rs"
+harness = false

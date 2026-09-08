@@ -1,60 +1,53 @@
-# Ordust
-//A common mistake when benchmarking in Rust is creating Order objects inside the benchmark loop—this measures heap allocation time rather than matching engine speed.
+**GitHub About / Tagline** (For repository settings)
 
-
-## Performance & Profiling
-
-Ordust is designed for ultra-low latency execution using a `Slab`-allocated doubly-linked list arena for price levels combined with $O(1)$ order index lookups. Profiling is conducted using [`hotpath`](https://crates.io/crates/hotpath) for real-time timing and memory allocation tracking across 200,000 operations (100,000 submissions + 100,000 cancellations).
+> An ultra-low latency, deterministic order matching engine written in safe Rust. Features $O(1)$ `Slab`-allocated price level unlinking, Price-Time priority matching, sub-100ns cancellations, and `hotpath` micro-profiling.
 
 ---
 
-### Key Metrics Summary
+# README Header & Overview
 
-| Operation | Avg Latency | P95 Latency | Throughput | Allocations / Call |
-| :--- | :--- | :--- | :--- | :--- |
-| **Order Submission** (`submit_order`) | **140 ns** | 291 ns | ~7.14M ops/sec | 508 B |
-| **Order Cancellation** (`cancel_order`) | **65 ns** | 125 ns | ~15.38M ops/sec | 48 B |
+# Ordust 🦀⚡
 
----
-
-### Hotpath Execution Breakdown
-
-#### 1. Latency Profile
-
-> **Benchmark Workload:** 100,000 `GTC` Limit Orders submitted sequentially, followed by 100,000 instant cancellations by `OrderId`.
-
-| Function | Calls | Avg Time | P95 Time | Total Time | % Total CPU |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `profile_engine::main` | 1 | 32.74 ms | 32.75 ms | 32.74 ms | 100.00% |
-| `engine::submit_order` | 100,000 | **140 ns** | **291 ns** | 14.01 ms | 42.80% |
-| `engine::cancel_order` | 100,000 | **65 ns** | **125 ns** | 6.56 ms | 20.04% |
-
-#### 2. Allocation & Memory Footprint
-
-> Total Allocated Memory: **53.1 MB** | Total Deallocated Memory: **53.1 MB** | Peak RSS: **73.2 MB**
-
-| Function | Calls | Avg Alloc | P95 Alloc | Total Alloc | % Total Alloc |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `engine::submit_order` | 100,000 | 508 B | 240 B | 48.5 MB | 91.22% |
-| `engine::cancel_order` | 100,000 | 48 B | 48 B | 4.6 MB | 8.62% |
-| `profile_engine::main` | 1 | 87.0 KB | 87.1 KB | 87.0 KB | 0.16% |
+**Ordust** is an ultra-low latency, deterministic order matching engine implemented in safe Rust. Designed for high-frequency trading (HFT) and microstructural execution research, it leverages a custom `Slab`-allocated intrusive doubly-linked list arena to achieve deterministic $O(1)$ order unlinking and sub-100 nanosecond cancellations.
 
 ---
 
-### Performance Highlights & Analysis
+### Key Features
 
-* **Sub-100 ns Unlinking:** `cancel_order` executes in **65 ns** by performing $O(1)$ node removal directly inside the pre-allocated `Slab` arena, bypassing $O(\log N)$ tree lookups.
-* **Allocation Bottleneck Identified:** The current allocation footprint (48 B for cancels, 508 B for submissions) is driven entirely by instantiating `Vec<BookEvent>` per function call. Zero-allocation paths can be unlocked by returning `SmallVec` or using an external event buffer.
+* **Price-Time Priority (FIFO):** Guarantees strict queue priority within each price level.
+* **$O(1)$ Arena-Based Cancellations:** Orders live in a pre-allocated `Slab<OrderNode>` doubly-linked list, allowing instant pointer unlinking without full array shifts or tree traversals.
+* **Flexible Order Types:** Full support for `Limit` and `Market` orders.
+* **Time In Force (TIF) Policies:** Built-in enforcement for `GTC` (Good 'Til Cancelled), `IOC` (Immediate Or Cancel), and `FOK` (Fill Or Kill).
+* **Comprehensive Event Stream:** Yields strongly-typed `BookEvent` records (`Accepted`, `Trade`, `RestingOnBook`, `Cancelled`) for real-time downstream processing.
+* **Zero Unsafe Code:** Built entirely with safe Rust abstraction boundaries.
 
 ---
 
-### How to Reproduce
+### Performance & Benchmarks
 
-Run the profiling binary with release optimizations and `hotpath` instrumentation enabled:
+Measured using [`hotpath`](https://www.google.com/search?q=https://crates.io/crates/hotpath) profiling over a continuous 200,000 operation workload (100,000 order submissions + 100,000 cancellations):
 
-```bash
-# Clean previous build artifacts
-cargo clean
+| Operation | Latency (Avg) | Latency (P95) | Throughput | Complexity |
+| --- | --- | --- | --- | --- |
+| **`submit_order`** | **140 ns** | 291 ns | ~7.14M ops/sec | $O(\log P + M)$ |
+| **`cancel_order`** | **65 ns** | 125 ns | ~15.38M ops/sec | $O(1)$ |
 
-# Run hotpath profile benchmark
-cargo run --release --bin profile_engine --features hotpath,hotpath-alloc
+*Note: $P$ = distinct price levels, $M$ = matched executions.*
+
+---
+
+### Architecture Quick Look
+
+```text
+               +-----------------------------------+
+               |        Engine / OrderBook         |
+               +-----------------------------------+
+                 /                               \
+     bids: BTreeMap<Price, Level>     asks: BTreeMap<Price, Level>
+                |                                  |
+                +-----------------+----------------+
+                                  |
+                   Arena: Slab<OrderNode>
+           [ Head <-> OrderNode <-> OrderNode <-> Tail ]
+
+```

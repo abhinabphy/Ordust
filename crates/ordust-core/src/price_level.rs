@@ -1,7 +1,6 @@
 use crate::{Order, OrderId, Price, Qty};
 use slab::Slab;
 use std::cmp::min;
-use std::collections::VecDeque;
 
 ///mapping for the key to ordernode where the order lives
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -13,7 +12,7 @@ pub struct OrderNode {
     prev: Option<NodeId>,
     next: Option<NodeId>,
 }
-
+///
 #[derive(Debug, Clone)]
 pub struct Level {
     price: Price,
@@ -33,6 +32,12 @@ impl Level {
     }
     pub fn push_back(self: &mut Self, arena: &mut Slab<OrderNode>, order: Order) -> NodeId {
         self.total_qty.0 += order.remaining_qty.0;
+
+        debug_assert_eq!(
+            order.price,
+            Some(self.price),
+            "order price must match this level's price"
+        );
 
         let currordernode = OrderNode {
             order: order,
@@ -136,7 +141,7 @@ impl Level {
         self.total_qty.0 == 0
     }
 
-    pub fn get_order_by_ID<'a>(&self, id: NodeId, arena: &'a Slab<OrderNode>) -> Option<&'a Order> {
+    pub fn get_order_by_id<'a>(&self, id: NodeId, arena: &'a Slab<OrderNode>) -> Option<&'a Order> {
         let ordernode = arena.get(id.0);
         match ordernode {
             Some(_ordernode) => Some(&_ordernode.order),
@@ -165,5 +170,70 @@ impl Level {
             self.pop_front(arena);
         }
         Some((id, fill_amount, filledstatus))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::*;
+
+    fn make_test_order(id: u64, qty: u64) -> Order {
+        Order {
+            id: OrderId(id),
+            side: Side::Buy,
+            order_type: OrderType::Limit,
+            tif: TimeInForce::GTC,
+            price: Some(Price(100)),
+            qty: Qty(qty),
+            remaining_qty: Qty(qty),
+            timestamp: Timestamp(id),
+        }
+    }
+
+    #[test]
+    fn test_remove_middle_order_splices_neighbors() {
+        let mut level = Level::new(Price(100));
+        let mut arena = Slab::new();
+
+        // 1. Insert 3 orders (Head -> Middle -> Tail)
+        let id1 = level.push_back(&mut arena, make_test_order(1, 10));
+        let id2 = level.push_back(&mut arena, make_test_order(2, 20)); // Middle
+        let id3 = level.push_back(&mut arena, make_test_order(3, 30));
+
+        assert_eq!(level.total_qty(), Qty(60));
+
+        // 2. Remove middle node
+        let cancelled = level.remove(&mut arena, id2);
+
+        // --- Assertions ---
+        // A. Verify returned order & level metrics
+        assert_eq!(cancelled.map(|o| o.id), Some(OrderId(2)));
+        assert_eq!(level.total_qty(), Qty(40));
+
+        // B. Verify head and tail remain untouched
+        assert_eq!(level.head, Some(id1));
+        assert_eq!(level.tail, Some(id3));
+
+        // C. Verify middle node is removed from Slab
+        assert!(arena.get(id2.0).is_none());
+
+        // D. Inspect direct pointer updates on neighboring nodes
+        let node1 = arena.get(id1.0).expect("head node should exist");
+        assert_eq!(node1.prev, None);
+        assert_eq!(node1.next, Some(id3)); // Pointer now points directly to node 3
+
+        let node3 = arena.get(id3.0).expect("tail node should exist");
+        assert_eq!(node3.prev, Some(id1)); // Pointer now points directly back to node 1
+        assert_eq!(node3.next, None);
+
+        // E. Verify matching queue sequence (pop_front yields Node 1 then Node 3)
+        let pop1 = level.pop_front(&mut arena);
+        assert_eq!(pop1.map(|o| o.id), Some(OrderId(1)));
+
+        let pop2 = level.pop_front(&mut arena);
+        assert_eq!(pop2.map(|o| o.id), Some(OrderId(3)));
+
+        assert!(level.is_empty());
     }
 }

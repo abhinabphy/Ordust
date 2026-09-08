@@ -1,6 +1,6 @@
-use Ordust::OrderType::Market;
-use Ordust::engine::{Engine,CANCEL_CALLS};
-use Ordust::types::*;
+use ordust_core::OrderType::Market;
+use ordust_core::engine::{CANCEL_CALLS, Engine};
+use ordust_core::types::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 fn make_profile_order(id: u64) -> Order {

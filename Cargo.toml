@@ -1,20 +1,46 @@
-[package]
-name = "Ordust"
+[workspace]
+members = [
+    "crates/ordust-core", "crates/ordust-market-data", "crates/ordust-terminal",
+#     "crates/ordust-sim",
+#     "crates/ordust-gateway",
+ ]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+authors = ["abhinabphy.me"]
+license = "MIT OR Apache-2.0"
 
-[dependencies]
+[workspace.dependencies]
+# Core dependencies
 slab = "0.4.12"
 thiserror = "2.0.20"
-hotpath = { version = "0.24.0", optional = true }
+hotpath = "0.24.0"
+url="2"
+futures-util="*"
 
-[dev-dependencies]
+# Async & Networking (Phase 2)
+tokio = { version = "1.38", features = ["full"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ordust-core = { path = "crates/ordust-core" }
+ordust-market-data={path="crates/ordust-market-data"}
+ordust-terminal={path="crates/ordust_terminal"}
+rustls = { version = "0.23.44",default-features = false, features = ["ring","std"] }
+ratatui="0.30.2"
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Benchmarking
 criterion = { version = "0.8.2", features = ["html_reports"] }
 
-[features]
-hotpath = ["dep:hotpath", "hotpath/hotpath"]
-hotpath-alloc = ["hotpath/hotpath-alloc"]
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
 
-[[bench]]
-name = "orderbook_benchmarks"
-harness = false
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

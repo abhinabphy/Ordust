@@ -77,7 +77,7 @@ pub struct Order {
 
 //NOTE:Design note: trade price = maker's price, always. This matters a lot — it's the rule real exchanges use,
 //and  MM bot will eventually reason about "did I get price improvement" based on this convention.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trade {
     pub maker_order_id: OrderId, // the resting order that got hit
     pub taker_order_id: OrderId, // the incoming order that crossed the spread
@@ -95,7 +95,7 @@ pub struct FillResult {
 }
 
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BookEvent {
     Accepted {
         order_id: OrderId,

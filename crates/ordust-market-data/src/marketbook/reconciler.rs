@@ -1,6 +1,5 @@
-use std::mem;
-
 use ordust_core::OrderBook;
+use thiserror::Error;
 
 use crate::{
     MarketBook,
@@ -13,16 +12,17 @@ pub enum SyncState {
     Buffering(Vec<DepthUpdate>),
     Synced { book: MarketBook },
 }
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ReconcileError {
+    #[error("gap expected found {got:?} , but expected {expected:?}")]
     GapDetected { expected: u64, got: u64 },
+    #[error("snapshot too old")]
     SnapshotTooOld, //no buffered event bridges the snapshots lastUpdateId
 }
 #[derive(Debug, Clone)]
 pub struct Reconciler {
     state: SyncState,
 }
-
 impl Reconciler {
     pub fn new() -> Self {
         Reconciler {
@@ -30,8 +30,6 @@ impl Reconciler {
         }
     }
 
-    /// Every message off the websocket passes through here first, always —
-    /// buffered if not yet synced, applied-with-gap-check if synced.
     pub fn on_diff(&mut self, update: DepthUpdate) -> Result<(), ReconcileError> {
         match &mut self.state {
             Buffering(bufferqueue) => {
@@ -46,7 +44,7 @@ impl Reconciler {
                 } else {
                     self.state = SyncState::Buffering(Vec::new());
                     Err(ReconcileError::GapDetected {
-                        expected: expected,
+                        expected,
                         got: update.first_update_id,
                     })
                 }
@@ -54,52 +52,61 @@ impl Reconciler {
         }
     }
 
-    /// Called once a REST snapshot arrives. Drops stale buffered events,
-    /// validates the first applicable event bridges the snapshot correctly,
-    /// transitions Buffering -> Synced.
+    /// Called when a full Snapshot arrives.
+    /// - If buffering with an empty queue, initializes directly into `Synced`.
+    /// - If buffering with queued diffs, bridges straddled diffs into `Synced`.
+    /// - If already `Synced`, updates the market book with the new snapshot.
     pub fn on_snapshot(&mut self, snapshot: Snapshot) -> Result<(), ReconcileError> {
-        let bufferqueue = match &mut self.state {
-            SyncState::Buffering(buf) => buf,
-            SyncState::Synced { .. } => return Ok(()),
-        };
-        let seq = snapshot.last_update_id + 1;
-        let straddle_idx = bufferqueue
-            .iter()
-            .position(|d| d.first_update_id <= seq && d.final_update_id >= seq);
-        let straddle_idx = match straddle_idx {
-            Some(idx) => idx,
-            None => {
-                *bufferqueue = Vec::new();
-                return Err(ReconcileError::SnapshotTooOld);
-            }
-        };
-        let mut marketbook = MarketBook::new();
-        marketbook.apply_snapshot(snapshot);
+        match &mut self.state {
+            SyncState::Buffering(bufferqueue) => {
+                let mut marketbook = MarketBook::new();
+                marketbook.apply_snapshot(snapshot);
 
-        for depths in bufferqueue[straddle_idx..].iter() {
-            let expected = marketbook.last_update_id() + 1;
-            let got=depths.first_update_id;
-            if depths.first_update_id <= expected && depths.final_update_id >= expected {
-                marketbook.apply_diff(depths);
-            } else {
-                self.state = SyncState::Buffering(Vec::new());
-                return Err(ReconcileError::GapDetected {
-                     expected,
-                     got
-                });
+                // Direct initialization when no diffs are buffered
+                if bufferqueue.is_empty() {
+                    self.state = SyncState::Synced { book: marketbook };
+                    return Ok(());
+                }
+
+                // Bridge buffered diffs if present
+                let seq = marketbook.last_update_id() + 1;
+                let straddle_idx = bufferqueue
+                    .iter()
+                    .position(|d| d.first_update_id <= seq && d.final_update_id >= seq);
+
+                let straddle_idx = match straddle_idx {
+                    Some(idx) => idx,
+                    None => {
+                        *bufferqueue = Vec::new();
+                        return Err(ReconcileError::SnapshotTooOld);
+                    }
+                };
+
+                for depths in bufferqueue[straddle_idx..].iter() {
+                    let expected = marketbook.last_update_id() + 1;
+                    let got = depths.first_update_id;
+                    if depths.first_update_id <= expected && depths.final_update_id >= expected {
+                        marketbook.apply_diff(depths);
+                    } else {
+                        self.state = SyncState::Buffering(Vec::new());
+                        return Err(ReconcileError::GapDetected { expected, got });
+                    }
+                }
+
+                self.state = SyncState::Synced { book: marketbook };
+                Ok(())
+            }
+            SyncState::Synced { book } => {
+                book.apply_snapshot(snapshot);
+                Ok(())
             }
         }
-        // 5. Successfully bridged and caught up
-        self.state = SyncState::Synced { book: marketbook };
-        Ok(())
     }
 
-    /// On any ReconcileError: caller must discard `state` entirely and
-    /// re-request a fresh snapshot. Do not attempt to "heal" a gap.
     pub fn book(&self) -> Option<&MarketBook> {
-        match &self.state{
-            SyncState::Synced { book }=>Some(book),
-            SyncState::Buffering(_)=>None,
+        match &self.state {
+            SyncState::Synced { book } => Some(book),
+            SyncState::Buffering(_) => None,
         }
     }
 }
@@ -107,17 +114,17 @@ impl Reconciler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DepthUpdate, Snapshot};
+    use crate::types::{DepthUpdate, Snapshot};
     use ordust_core::types::*;
 
     // Helper functions to construct lightweight test payloads
-   fn make_snapshot(last_update_id: u64) -> Snapshot {
-    Snapshot {
-        last_update_id,
-        bids: vec![(Price(100), Qty(1))],
-        asks: vec![(Price(101), Qty(2))],
+    fn make_snapshot(last_update_id: u64) -> Snapshot {
+        Snapshot {
+            last_update_id,
+            bids: vec![(Price(100), Qty(1))],
+            asks: vec![(Price(101), Qty(2))],
+        }
     }
-}
 
     fn make_diff(first_update_id: u64, final_update_id: u64) -> DepthUpdate {
         DepthUpdate {
@@ -161,7 +168,10 @@ mod tests {
         let err = reconciler.on_snapshot(make_snapshot(100)).unwrap_err();
 
         assert!(matches!(err, ReconcileError::SnapshotTooOld));
-        assert!(reconciler.book().is_none(), "State must remain Buffering on error");
+        assert!(
+            reconciler.book().is_none(),
+            "State must remain Buffering on error"
+        );
     }
 
     #[test]
@@ -181,7 +191,10 @@ mod tests {
                 got: 105
             }
         ));
-        assert!(reconciler.book().is_none(), "Must drop state back to Buffering");
+        assert!(
+            reconciler.book().is_none(),
+            "Must drop state back to Buffering"
+        );
     }
 
     #[test]

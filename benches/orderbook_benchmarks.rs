@@ -1,6 +1,5 @@
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
-// Replace `your_crate_name` with the package name defined in Cargo.toml
-use Ordust::{Order, OrderId, OrderType, Price, Qty, Side, TimeInForce, engine};
+use ordust_core::{Order, OrderId, OrderType, Price, Qty, Side, TimeInForce, engine};
 
 fn make_test_order(id: u64, side: Side, price: u64, qty: u64) -> Order {
     Order {
@@ -11,7 +10,7 @@ fn make_test_order(id: u64, side: Side, price: u64, qty: u64) -> Order {
         price: Some(Price(price)),
         qty: Qty(qty),
         remaining_qty: Qty(qty),
-        timestamp: Ordust::Timestamp(1),
+        timestamp: ordust_core::Timestamp(1),
     }
 }
 

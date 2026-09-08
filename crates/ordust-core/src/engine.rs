@@ -275,12 +275,10 @@ mod tests {
         //     let _ = engine.submit_order(order);
         // }
 
-        for id in 0..100_000{
-            let _=engine.cancel_order(OrderId(id));
+        for id in 0..100_000 {
+            let _ = engine.cancel_order(OrderId(id));
         }
         dbg!(engine.book.depth(Buy, 2));
-
-
 
         println!(
             "cancel_order invoked {} times",
@@ -289,22 +287,72 @@ mod tests {
     }
 
     #[test]
-fn test_duplicate_order_id_returns_error() {
-    let mut engine = Engine::new();
-    
+    fn test_duplicate_order_id_returns_error() {
+        let mut engine = Engine::new();
 
-    let order1 = make_order(99, Side::Buy, 100, 10, 1, OrderType::Limit, TimeInForce::GTC);
-    let result1 = engine.submit_order(order1);
-    assert!(result1.is_ok(), "First order should be accepted");
+        let order1 = make_order(
+            99,
+            Side::Buy,
+            100,
+            10,
+            1,
+            OrderType::Limit,
+            TimeInForce::GTC,
+        );
+        let result1 = engine.submit_order(order1);
+        assert!(result1.is_ok(), "First order should be accepted");
 
-
-    let order2 = make_order(99, Side::Sell, 105, 50, 2, OrderType::Limit, TimeInForce::GTC);
-    let result2 = engine.submit_order(order2);
-    match result2 {
-        Err(EngineError::DuplicateOrderId(id)) => {
-            assert_eq!(id, OrderId(99)); // Proves the error propagated correctly!
+        let order2 = make_order(
+            99,
+            Side::Sell,
+            105,
+            50,
+            2,
+            OrderType::Limit,
+            TimeInForce::GTC,
+        );
+        let result2 = engine.submit_order(order2);
+        match result2 {
+            Err(EngineError::DuplicateOrderId(id)) => {
+                assert_eq!(id, OrderId(99)); // Proves the error propagated correctly!
+            }
+            _ => panic!("Expected DuplicateOrderId error, got {:?}", result2),
         }
-        _ => panic!("Expected DuplicateOrderId error, got {:?}", result2),
     }
-}
+
+    #[test]
+    fn test_cancel_middle_order() -> Result<(), EngineError> {
+        let mut engine = Engine::new();
+
+        // Submit 3 resting orders at $100
+        engine.submit_order(make_order(1, Side::Buy, 100, 10, 1, Limit, GTC))?;
+        engine.submit_order(make_order(2, Side::Buy, 100, 20, 2, Limit, GTC))?; // Middle
+        engine.submit_order(make_order(3, Side::Buy, 100, 30, 3, Limit, GTC))?;
+
+        // Cancel middle order
+        let cancel_events = engine.cancel_order(OrderId(2))?;
+        assert_eq!(
+            cancel_events,
+            vec![BookEvent::Cancelled {
+                order_id: OrderId(2)
+            }]
+        );
+
+        // Taker Sell for 25 units should execute against Order 1 (10 units) then Order 3 (15 units)
+        let taker = make_order(4, Side::Sell, 100, 25, 4, Limit, IOC);
+        let events = engine.submit_order(taker)?;
+
+        let trades: Vec<_> = events
+            .into_iter()
+            .filter_map(|e| match e {
+                BookEvent::Trade(t) => Some((t.maker_order_id, t.qty)),
+                _ => None,
+            })
+            .collect();
+
+        // Order 2 was completely bypassed
+        assert_eq!(trades, vec![(OrderId(1), Qty(10)), (OrderId(3), Qty(15))]);
+
+        Ok(())
+    }
 }
